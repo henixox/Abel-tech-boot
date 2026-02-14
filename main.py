@@ -17,24 +17,38 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
+# ---------------------------------------------------------
+# 1. መቼቶች (Settings)
+# ---------------------------------------------------------
 API_TOKEN = '8570487484:AAEnmwHvtg0cu-eaUyCSHoYA9sEr_5yzJtw'
 ADMIN_IDS = [8596054746, 7443150824] 
 bot = telebot.TeleBot(API_TOKEN)
 
 completed_users = set()
 
-# 🛡️ ዋናው የሊንክ መከላከያ (በግልም በግሩፕም ይሰራል)
+# የዕቃዎቹ ምስሎች ዝርዝር
+ITEM_IMAGES = {
+    "ፍሪጅ": "https://st2.depositphotos.com/1000128/7503/i/450/depositphotos_75039115-stock-photo-refrigerator-with-open-door.jpg",
+    "ኦቭን": "http://googleusercontent.com/image_collection/image_retrieval/18292177481160207008_0",
+    "ልብስ ማጠቢያ": "https://media.istockphoto.com/id/1144960519/photo/modern-washing-machine-in-laundry-room.jpg?s=612x612&w=0&k=20&c=L_qgI37FkH0_Y0QdE8H-j_f-vI6tHjGjK6rXpX9g-mI=",
+    "ቴሌቪዥን": "https://t3.ftcdn.net/jpg/00/65/52/53/360_F_65525301_8uF0RzCgR6jHInOqE5K8oMUnqfO8K9mS.jpg",
+    "ጀነሬተር": "http://googleusercontent.com/image_collection/image_retrieval/4900499586981707486_0",
+    "AC": "http://googleusercontent.com/image_collection/image_retrieval/7819509568470222575_1",
+    "Heat pump": "http://googleusercontent.com/image_collection/image_retrieval/17853399366638542416_0"
+}
+
+# 🛡️ ሊንክ መከላከያ
 @bot.message_handler(func=lambda message: re.search(r'(http://|https://|www\.|t\.me/|bit\.ly/)', (message.text or "").lower()))
 def link_protector(message):
     try:
-        # መጀመሪያ ሊንኩን ይሰርዘዋል
         bot.delete_message(message.chat.id, message.message_id)
-        # ማስጠንቀቂያ ይሰጣል
         bot.send_message(message.chat.id, "❌ **ሊንክ መላክ የተከለከለ ነው!**")
     except:
-        # ቦቱ አድሚን ካልሆነና መሰረዝ ካልቻለ ሪፕላይ ያደርጋል
         bot.reply_to(message, "❌ ሊንክ መላክ አይፈቀድም!")
 
+# ---------------------------------------------------------
+# 2. የምዝገባ ሂደት
+# ---------------------------------------------------------
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -52,7 +66,6 @@ def ask_name(message):
     bot.register_next_step_handler(msg, process_name)
 
 def process_name(message):
-    # ስም ቦታ ላይ ሊንክ ቢላክ ለመከላከል
     if re.search(r'(http|https|www\.|t\.me)', (message.text or "").lower()):
         msg = bot.send_message(message.chat.id, "❌ ሊንክ አይፈቀድም! እባክዎ ስምዎን ብቻ ያስገቡ?")
         bot.register_next_step_handler(msg, process_name)
@@ -66,18 +79,42 @@ def process_name(message):
 
 def show_item_options(message, name):
     markup = types.InlineKeyboardMarkup(row_width=2)
-    items = ["ፍሪጅ", "ኦቭን", "ልብስ ማጠቢያ", "ቴሌቪዥን", "ጀነሬተር", "AC", "Heat pump"]
+    items = list(ITEM_IMAGES.keys())
     for item in items:
-        markup.add(types.InlineKeyboardButton(item, callback_data=f"item:{item}:{name}:{message.from_user.id}"))
+        markup.add(types.InlineKeyboardButton(item, callback_data=f"view:{item}:{name}"))
     bot.send_message(message.chat.id, f"📋 **ደረጃ 2/5**\n\n{name}፣ የሚጠገነውን ዕቃ ይምረጡ፦", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('item:'))
-def handle_item_selection(call):
-    bot.answer_callback_query(call.id)
-    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    _, item, name, user_id = call.data.split(':')
+# 🖼️ ትልቅ ምስል ማሳያ (Next Page)
+@bot.callback_query_handler(func=lambda call: call.data.startswith('view:'))
+def view_item(call):
+    _, item, name = call.data.split(':')
+    img_url = ITEM_IMAGES.get(item)
+    
+    markup = types.InlineKeyboardMarkup()
+    confirm_btn = types.InlineKeyboardButton(f"✅ {item} ጥገና ይጀመር", callback_data=f"confirm:{item}:{name}")
+    back_btn = types.InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back:{name}")
+    markup.add(confirm_btn, back_btn)
+
+    caption = f"🔍 **የጥገና መረጃ፦ {item}**\n\nይህንን ዕቃ ለማስጠገን ከፈለጉ 'ጥገና ይጀመር' የሚለውን ይጫኑ።"
+    bot.edit_message_media(
+        media=types.InputMediaPhoto(img_url, caption=caption),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('confirm:'))
+def handle_confirm(call):
+    _, item, name = call.data.split(':')
+    bot.delete_message(call.message.chat.id, call.message.message_id)
     msg = bot.send_message(call.message.chat.id, f"📋 **ደረጃ 3/5**\n\nየ {item} አድራሻ ይጻፉ?")
-    bot.register_next_step_handler(msg, process_location, name, item, user_id)
+    bot.register_next_step_handler(msg, process_location, name, item, call.from_user.id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('back:'))
+def handle_back(call):
+    name = call.data.split(':')[1]
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+    show_item_options(call.message, name)
 
 def process_location(message, name, item, user_id):
     if re.search(r'(http|https|www\.|t\.me)', (message.text or "").lower()):
@@ -111,4 +148,5 @@ def final_step(message, name, item, location, user_id, phone):
 
 if __name__ == "__main__":
     keep_alive()
+    print("አቤል ቴክ ቦት ስራ ጀምሯል...")
     bot.infinity_polling(timeout=20)
