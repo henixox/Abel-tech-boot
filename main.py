@@ -4,11 +4,14 @@ import re
 from flask import Flask
 from threading import Thread
 
+# ---------------------------------------------------------
+# 1. ሰርቨሩ እንዳይዘጋ (Keep Alive)
+# ---------------------------------------------------------
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Abel Tech is Active!"
+    return "Abel Tech is Online and Fast!"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
@@ -17,14 +20,17 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# --- መቼቶች ---
+# ---------------------------------------------------------
+# 2. መቼቶች (Settings)
+# ---------------------------------------------------------
 API_TOKEN = '8570487484:AAEnmwHvtg0cu-eaUyCSHoYA9sEr_5yzJtw'
 ADMIN_IDS = [8596054746, 7443150824] 
 bot = telebot.TeleBot(API_TOKEN)
 
-# በሂደት ላይ ያሉ ተጠቃሚዎችን ለመያዝ
+# በሂደት ላይ ያሉ ተጠቃሚዎች ዝርዝር
 user_in_progress = set()
 
+# ትክክለኛ የዕቃዎች ምስሎች
 ITEM_IMAGES = {
     "ፍሪጅ": "https://st2.depositphotos.com/1000128/7503/i/450/depositphotos_75039115-stock-photo-refrigerator-with-open-door.jpg",
     "ኦቭን": "https://media.istockphoto.com/id/1162464736/photo/modern-electric-oven.jpg?s=612x612&w=0&k=20&c=6_n-u3HlW4w0G2P_f5_P3w_j9p_V_S4-fI1p_V7Y-x0=",
@@ -34,6 +40,10 @@ ITEM_IMAGES = {
     "AC": "https://media.istockphoto.com/id/1163467375/photo/air-conditioner-split-system-indoor-unit-on-wall.jpg?s=612x612&w=0&k=20&c=Ea6-S9g4o4U_T7V_S4-fI1p_V7Y-x0=",
     "Heat pump": "https://media.istockphoto.com/id/1325603774/photo/modern-heat-pump-air-to-water-for-heating-and-hot-water.jpg?s=612x612&w=0&k=20&c=Ea6-S9g4o4U_T7V_S4-fI1p_V7Y-x0="
 }
+
+# ---------------------------------------------------------
+# 3. ዋና ዋና ተግባራት
+# ---------------------------------------------------------
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -62,35 +72,39 @@ def show_item_options(message, name):
         markup.add(types.InlineKeyboardButton(item, callback_data=f"view:{item}:{name}"))
     bot.send_message(message.chat.id, f"📋 **ደረጃ 2/5**\n\n{name}፣ የሚጠገነውን ዕቃ ይምረጡ፦", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('view:'))
-def view_item(call):
-    bot.answer_callback_query(call.id) # መሽከርከሩን ወዲያው ያቆመዋል
-    _, item, name = call.data.split(':')
-    img_url = ITEM_IMAGES.get(item)
+# --- የ Button መሽከርከርን የሚፈታው ወሳኝ ክፍል ---
+@bot.callback_query_handler(func=lambda call: True)
+def callback_listener(call):
+    # መሽከርከሩን ወዲያውኑ ያቆማል
+    bot.answer_callback_query(call.id)
     
-    markup = types.InlineKeyboardMarkup()
-    confirm_btn = types.InlineKeyboardButton(f"✅ {item} ጥገና ይጀመር", callback_data=f"confirm:{item}:{name}")
-    back_btn = types.InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back:{name}")
-    markup.add(confirm_btn, back_btn)
+    if call.data.startswith('view:'):
+        _, item, name = call.data.split(':')
+        img_url = ITEM_IMAGES.get(item)
+        
+        markup = types.InlineKeyboardMarkup()
+        confirm_btn = types.InlineKeyboardButton(f"✅ {item} ጥገና ይጀመር", callback_data=f"confirm:{item}:{name}")
+        back_btn = types.InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back:{name}")
+        markup.add(confirm_btn, back_btn)
 
-    caption = f"🔍 **የጥገና መረጃ፦ {item}**\n\nይህንን ዕቃ ለማስጠገን ከፈለጉ 'ጥገና ይጀመር' የሚለውን ይጫኑ።"
-    bot.send_photo(call.message.chat.id, img_url, caption=caption, reply_markup=markup)
-    bot.delete_message(call.message.chat.id, call.message.message_id)
+        caption = f"🔍 **የጥገና መረጃ፦ {item}**\n\nይህንን ዕቃ ለማስጠገን ከፈለጉ 'ጥገና ይጀመር' የሚለውን ይጫኑ።"
+        bot.send_photo(call.message.chat.id, img_url, caption=caption, reply_markup=markup)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('confirm:'))
-def handle_confirm(call):
-    bot.answer_callback_query(call.id)
-    _, item, name = call.data.split(':')
-    bot.delete_message(call.message.chat.id, call.message.message_id)
-    msg = bot.send_message(call.message.chat.id, f"📋 **ደረጃ 3/5**\n\nየ {item} አድራሻ ይጻፉ?")
-    bot.register_next_step_handler(msg, process_location, name, item)
+    elif call.data.startswith('confirm:'):
+        _, item, name = call.data.split(':')
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        msg = bot.send_message(call.message.chat.id, f"📋 **ደረጃ 3/5**\n\nየ {item} አድራሻ ይጻፉ?")
+        bot.register_next_step_handler(msg, process_location, name, item)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('back:'))
-def handle_back(call):
-    bot.answer_callback_query(call.id)
-    name = call.data.split(':')[1]
-    bot.delete_message(call.message.chat.id, call.message.message_id)
-    show_item_options(call.message, name)
+    elif call.data.startswith('back:'):
+        name = call.data.split(':')[1]
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        show_item_options(call.message, name)
+
+# ---------------------------------------------------------
+# 4. ቀጣይ የጥያቄ ደረጃዎች
+# ---------------------------------------------------------
 
 def process_location(message, name, item):
     location = message.text.strip()
@@ -106,12 +120,14 @@ def final_step(message, name, item, location, phone):
     user_id = message.from_user.id
     profile_link = f"tg://user?id={user_id}"
     
+    # ለናንተ የሚላክ የመረጃ ማጠቃለያ
     summary = (
-        f"🚨 **አዲስ ትዕዛዝ**\n\n"
+        f"🚨 **አዲስ ትዕዛዝ ደርሷል!**\n\n"
         f"👤 **ስም:** [{name}]({profile_link})\n"
         f"🛠️ **ዕቃ:** {item}\n"
         f"📍 **አድራሻ:** {location}\n"
-        f"📞 **ስልክ:** `{phone}`"
+        f"📞 **ስልክ:** `{phone}`\n\n"
+        f"🔗 ስሙን በመንካት ደንበኛውን ማግኘት ይችላሉ።"
     )
     
     for admin_id in ADMIN_IDS:
@@ -124,10 +140,14 @@ def final_step(message, name, item, location, phone):
     
     bot.send_message(message.chat.id, "✅ **ጥያቄዎ ለአቤል ቴክ ደርሷል፤ በቅርቡ እንደውልልዎታለን። እስከዚያ በትዕግስት ይጠብቁን።** 😊")
     
-    # ተጠቃሚው ምዝገባውን ስለጨረሰ ከዝርዝሩ ይወጣል
+    # ተጠቃሚውን ከ "በሂደት ላይ" ዝርዝር ማውጣት
     if user_id in user_in_progress:
         user_in_progress.remove(user_id)
 
+# ---------------------------------------------------------
+# 5. ቦቱን ማስነሳት
+# ---------------------------------------------------------
 if __name__ == "__main__":
     keep_alive()
+    print("አቤል ቴክ ቦት ስራ ጀምሯል...")
     bot.infinity_polling(timeout=20)
