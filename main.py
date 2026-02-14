@@ -1,153 +1,92 @@
 import telebot
 from telebot import types
-import re
 from flask import Flask
 from threading import Thread
 
-# ---------------------------------------------------------
-# 1. ሰርቨሩ እንዳይዘጋ (Keep Alive)
-# ---------------------------------------------------------
+# 1. ሰርቨሩ እንዳይዘጋ
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "Abel Tech is Online and Fast!"
+def home(): return "Abel Tech is Running!"
 
-def run():
-    app.run(host='0.0.0.0', port=8080)
+def run(): app.run(host='0.0.0.0', port=8080)
+def keep_alive(): Thread(target=run).start()
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# ---------------------------------------------------------
-# 2. መቼቶች (Settings)
-# ---------------------------------------------------------
+# 2. መቼቶች
 API_TOKEN = '8570487484:AAEnmwHvtg0cu-eaUyCSHoYA9sEr_5yzJtw'
-ADMIN_IDS = [8596054746, 7443150824] 
+ADMIN_IDS = [8596054746, 7443150824]
 bot = telebot.TeleBot(API_TOKEN)
+user_data = {}
 
-# በሂደት ላይ ያሉ ተጠቃሚዎች ዝርዝር
-user_in_progress = set()
-
-# ትክክለኛ የዕቃዎች ምስሎች
-ITEM_IMAGES = {
-    "ፍሪጅ": "https://st2.depositphotos.com/1000128/7503/i/450/depositphotos_75039115-stock-photo-refrigerator-with-open-door.jpg",
-    "ኦቭን": "https://media.istockphoto.com/id/1162464736/photo/modern-electric-oven.jpg?s=612x612&w=0&k=20&c=6_n-u3HlW4w0G2P_f5_P3w_j9p_V_S4-fI1p_V7Y-x0=",
-    "ልብስ ማጠቢያ": "https://media.istockphoto.com/id/1144960519/photo/modern-washing-machine-in-laundry-room.jpg?s=612x612&w=0&k=20&c=L_qgI37FkH0_Y0QdE8H-j_f-vI6tHjGjK6rXpX9g-mI=",
-    "ቴሌቪዥን": "https://media.istockphoto.com/id/1169727402/photo/modern-led-smart-tv-screen-mockup.jpg?s=612x612&w=0&k=20&c=Ea6-S9g4o4U_T7V_S4-fI1p_V7Y-x0=",
-    "ጀነሬተር": "https://media.istockphoto.com/id/183281273/photo/gas-powered-generator.jpg?s=612x612&w=0&k=20&c=Ea6-S9g4o4U_T7V_S4-fI1p_V7Y-x0=",
-    "AC": "https://media.istockphoto.com/id/1163467375/photo/air-conditioner-split-system-indoor-unit-on-wall.jpg?s=612x612&w=0&k=20&c=Ea6-S9g4o4U_T7V_S4-fI1p_V7Y-x0=",
-    "Heat pump": "https://media.istockphoto.com/id/1325603774/photo/modern-heat-pump-air-to-water-for-heating-and-hot-water.jpg?s=612x612&w=0&k=20&c=Ea6-S9g4o4U_T7V_S4-fI1p_V7Y-x0="
+# ምስሎች (ሊንኮቹ አጠር ተደርገዋል)
+IMG = {
+    "ፍሪጅ": "https://tinyurl.com/fridge-rep",
+    "ኦቭን": "https://tinyurl.com/oven-rep",
+    "ልብስ ማጠቢያ": "https://tinyurl.com/wash-rep",
+    "ቴሌቪዥን": "https://tinyurl.com/tv-rep",
+    "ጀነሬተር": "https://tinyurl.com/gen-rep",
+    "AC": "https://tinyurl.com/ac-rep",
+    "Heat pump": "https://tinyurl.com/hp-rep"
 }
 
-# ---------------------------------------------------------
-# 3. ዋና ዋና ተግባራት
-# ---------------------------------------------------------
-
 @bot.message_handler(commands=['start'])
-def start(message):
-    markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-    btn = types.KeyboardButton('🛠️ ጥገና ለመመዝገብ')
-    markup.add(btn)
-    bot.send_message(message.chat.id, "እንኳን ወደ አቤል ቴክ በሰላም መጡ! 😊", reply_markup=markup)
+def start(m):
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add('🛠️ ጥገና ለመመዝገብ')
+    bot.send_message(m.chat.id, "እንኳን ወደ አቤል ቴክ መጡ! 😊", reply_markup=kb)
 
-@bot.message_handler(func=lambda message: message.text == '🛠️ ጥገና ለመመዝገብ')
-def ask_name(message):
-    if message.from_user.id in user_in_progress:
-        bot.send_message(message.chat.id, "⚠️ ቀድሞ የጀመሩት ምዝገባ አለ። እባክዎ እሱን ይጨርሱ።")
-        return
+@bot.message_handler(func=lambda m: m.text == '🛠️ ጥገና ለመመዝገብ')
+def ask_name(m):
+    msg = bot.send_message(m.chat.id, "📋 **ደረጃ 1/5**\nስምዎን ያስገቡ?")
+    bot.register_next_step_handler(msg, lambda msg: save_step(msg, 'name'))
+
+def save_step(m, key):
+    uid = m.from_user.id
+    if uid not in user_data: user_data[uid] = {}
+    user_data[uid][key] = m.text
     
-    user_in_progress.add(message.from_user.id)
-    msg = bot.send_message(message.chat.id, "📋 **ደረጃ 1/5**\n\nሙሉ ስምዎን ያስገቡ?")
-    bot.register_next_step_handler(msg, process_name)
+    if key == 'name':
+        kb = types.InlineKeyboardMarkup(row_width=2)
+        kb.add(*[types.InlineKeyboardButton(i, callback_data=f"v:{i}") for i in IMG])
+        bot.send_message(m.chat.id, "📋 **ደረጃ 2/5**\nዕቃ ይምረጡ፦", reply_markup=kb)
+    elif key == 'loc':
+        msg = bot.send_message(m.chat.id, "📋 **ደረጃ 4/5**\nስልክ ያስገቡ?")
+        bot.register_next_step_handler(msg, lambda msg: save_step(msg, 'phone'))
+    elif key == 'phone':
+        msg = bot.send_message(m.chat.id, "📋 **ደረጃ 5/5**\nፎቶ ይላኩ (ወይም 'የለኝም' ይበሉ)")
+        bot.register_next_step_handler(msg, final)
 
-def process_name(message):
-    name = message.text.strip()
-    show_item_options(message, name)
+@bot.callback_query_handler(func=lambda c: True)
+def calls(c):
+    bot.answer_callback_query(c.id)
+    uid = c.from_user.id
+    if c.data.startswith('v:'):
+        item = c.data.split(':')[1]
+        user_data[uid]['item'] = item
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton(f"✅ {item} ይጀመር", callback_data="ok"),
+               types.InlineKeyboardButton("🔙 ተመለስ", callback_data="back"))
+        bot.send_photo(c.message.chat.id, IMG.get(item, ""), caption=f"🔍 {item} ይስተካከል?", reply_markup=kb)
+        bot.delete_message(c.message.chat.id, c.message.message_id)
+    elif c.data == "ok":
+        msg = bot.send_message(c.message.chat.id, "📋 **ደረጃ 3/5**\nአድራሻ ይጻፉ?")
+        bot.register_next_step_handler(msg, lambda msg: save_step(msg, 'loc'))
+    elif c.data == "back":
+        save_step(c.message, 'name')
 
-def show_item_options(message, name):
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    for item in ITEM_IMAGES.keys():
-        markup.add(types.InlineKeyboardButton(item, callback_data=f"view:{item}:{name}"))
-    bot.send_message(message.chat.id, f"📋 **ደረጃ 2/5**\n\n{name}፣ የሚጠገነውን ዕቃ ይምረጡ፦", reply_markup=markup)
-
-# --- የ Button መሽከርከርን የሚፈታው ወሳኝ ክፍል ---
-@bot.callback_query_handler(func=lambda call: True)
-def callback_listener(call):
-    # መሽከርከሩን ወዲያውኑ ያቆማል
-    bot.answer_callback_query(call.id)
+def final(m):
+    uid = m.from_user.id
+    d = user_data.get(uid)
+    link = f"tg://user?id={uid}"
+    res = f"🚨 **አዲስ ትዕዛዝ**\n👤 **ስም:** [{d['name']}]({link})\n🛠️ **ዕቃ:** {d['item']}\n📍 **አድራሻ:** {d['loc']}\n📞 **ስልክ:** `{d['phone']}`"
     
-    if call.data.startswith('view:'):
-        _, item, name = call.data.split(':')
-        img_url = ITEM_IMAGES.get(item)
-        
-        markup = types.InlineKeyboardMarkup()
-        confirm_btn = types.InlineKeyboardButton(f"✅ {item} ጥገና ይጀመር", callback_data=f"confirm:{item}:{name}")
-        back_btn = types.InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back:{name}")
-        markup.add(confirm_btn, back_btn)
-
-        caption = f"🔍 **የጥገና መረጃ፦ {item}**\n\nይህንን ዕቃ ለማስጠገን ከፈለጉ 'ጥገና ይጀመር' የሚለውን ይጫኑ።"
-        bot.send_photo(call.message.chat.id, img_url, caption=caption, reply_markup=markup)
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-
-    elif call.data.startswith('confirm:'):
-        _, item, name = call.data.split(':')
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        msg = bot.send_message(call.message.chat.id, f"📋 **ደረጃ 3/5**\n\nየ {item} አድራሻ ይጻፉ?")
-        bot.register_next_step_handler(msg, process_location, name, item)
-
-    elif call.data.startswith('back:'):
-        name = call.data.split(':')[1]
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        show_item_options(call.message, name)
-
-# ---------------------------------------------------------
-# 4. ቀጣይ የጥያቄ ደረጃዎች
-# ---------------------------------------------------------
-
-def process_location(message, name, item):
-    location = message.text.strip()
-    msg = bot.send_message(message.chat.id, "📋 **ደረጃ 4/5**\n\nስልክ ቁጥርዎን ያስገቡ?")
-    bot.register_next_step_handler(msg, process_phone, name, item, location)
-
-def process_phone(message, name, item, location):
-    phone = message.text.strip()
-    msg = bot.send_message(message.chat.id, "📋 **ደረጃ 5/5**\n\nየዕቃውን ፎቶ ይላኩ? (ፎቶ ከሌለ 'የለኝም' ይበሉ)")
-    bot.register_next_step_handler(msg, final_step, name, item, location, phone)
-
-def final_step(message, name, item, location, phone):
-    user_id = message.from_user.id
-    profile_link = f"tg://user?id={user_id}"
-    
-    # ለናንተ የሚላክ የመረጃ ማጠቃለያ
-    summary = (
-        f"🚨 **አዲስ ትዕዛዝ ደርሷል!**\n\n"
-        f"👤 **ስም:** [{name}]({profile_link})\n"
-        f"🛠️ **ዕቃ:** {item}\n"
-        f"📍 **አድራሻ:** {location}\n"
-        f"📞 **ስልክ:** `{phone}`\n\n"
-        f"🔗 ስሙን በመንካት ደንበኛውን ማግኘት ይችላሉ።"
-    )
-    
-    for admin_id in ADMIN_IDS:
+    for aid in ADMIN_IDS:
         try:
-            if message.content_type == 'photo':
-                bot.send_photo(admin_id, message.photo[-1].file_id, caption=summary, parse_mode="Markdown")
-            else:
-                bot.send_message(admin_id, summary + "\n🖼️ ፎቶ አልተላከም", parse_mode="Markdown")
+            if m.content_type == 'photo': bot.send_photo(aid, m.photo[-1].file_id, caption=res, parse_mode="Markdown")
+            else: bot.send_message(aid, res + "\n🖼️ ፎቶ የለም", parse_mode="Markdown")
         except: pass
-    
-    bot.send_message(message.chat.id, "✅ **ጥያቄዎ ለአቤል ቴክ ደርሷል፤ በቅርቡ እንደውልልዎታለን። እስከዚያ በትዕግስት ይጠብቁን።** 😊")
-    
-    # ተጠቃሚውን ከ "በሂደት ላይ" ዝርዝር ማውጣት
-    if user_id in user_in_progress:
-        user_in_progress.remove(user_id)
+    bot.send_message(m.chat.id, "✅ ጥያቄዎ ለአቤል ቴክ ደርሷል። በቅርቡ እንደውልልዎታለን።")
+    user_data.pop(uid, None)
 
-# ---------------------------------------------------------
-# 5. ቦቱን ማስነሳት
-# ---------------------------------------------------------
 if __name__ == "__main__":
     keep_alive()
-    print("አቤል ቴክ ቦት ስራ ጀምሯል...")
-    bot.infinity_polling(timeout=20)
+    bot.polling(non_stop=True)
