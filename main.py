@@ -23,7 +23,7 @@ def home(): return "Abel Tech Bot is Running!"
 def keep_alive():
     t = Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
     t.daemon = True
-    t.start()
+   t.start()
 
 # --- ለ. ሰላምታ እና የግሩፕ ጥበቃ ---
 @bot.message_handler(content_types=['new_chat_members'])
