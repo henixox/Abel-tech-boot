@@ -31,7 +31,6 @@ def welcome_msg(m):
     for new_user in m.new_chat_members:
         bot.send_message(m.chat.id, f"እንኳን ደህና መጡ {new_user.first_name}! 🙏\n\nጥያቄ ለመጠየቅ መጀመሪያ 50 ሰው Add ያድርጉ።")
     user_counts[m.from_user.id] = user_counts.get(m.from_user.id, 0) + len(m.new_chat_members)
-
 @bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'])
 def group_ctrl(m):
     uid = m.from_user.id
