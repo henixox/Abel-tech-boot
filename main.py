@@ -1,275 +1,73 @@
 import telebot
 from telebot import types
-import threading
+import sqlite3
 from flask import Flask
 from threading import Thread
-import os
+import re
 
-API_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN') 
-ADMIN_IDS = [8596054746, 7443150824] 
-MY_PHONE = "09XXXXXXXX" 
+# 1. መሠረታዊ መቼቶች (Token እና ID)
+API_TOKEN = '7948646187:AAGH1rAb3-PD27GoDvZLDQcAkvrjO-q_ptQ'
+MY_ADMIN_ID = 8596054746 
 bot = telebot.TeleBot(API_TOKEN)
-
-user_counts = {}
-user_registry = {}
-registered_users = set()
-ITEMS = {"1": "ፍሪጅ", "2": "ኦቭን", "3": "ልብስ ማጠቢያ", "4": "ቴሌቪዥን", "5": "ጀነሬተር", "6": "AC", "7": "Heat pump"}
-
-# --- ሀ. ዌብ ሰርቨር (ለ UptimeRobot) ---
 app = Flask('')
-@app.route('/')
-def home(): return "Abel Tech Bot is Running!"
 
-def keep_alive():
-    t = Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
-    t.daemon = True
-   t.start()
+# 2. ዳታቤዝ
+def init_db():
+    conn = sqlite3.connect('abel_tech.db', check_same_thread=False)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS repairs 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, item TEXT, phone TEXT)''')
+    conn.commit()
+    return conn
 
-# --- ለ. ሰላምታ እና የግሩፕ ጥበቃ ---
-@bot.message_handler(content_types=['new_chat_members'])
-def welcome_msg(m):
-    for new_user in m.new_chat_members:
-        bot.send_message(m.chat.id, f"እንኳን ደህና መጡ {new_user.first_name}! 🙏\n\nጥያቄ ለመጠየቅ መጀመሪያ 50 ሰው Add ያድርጉ።")
-    user_counts[m.from_user.id] = user_counts.get(m.from_user.id, 0) + len(m.new_chat_members)
-@bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'])
-def group_ctrl(m):
-    uid = m.from_user.id
-    if uid in ADMIN_IDS: return
-    if m.text and ("t.me/" in m.text or "http" in m.text):
-        bot.delete_message(m.chat.id, m.message_id)
-        return
-    added = user_counts.get(uid, 0)
-    if added < 50:
-        try:
-            bot.delete_message(m.chat.id, m.message_id)
-            warn = bot.send_message(m.chat.id, f"⚠️ መጀመሪያ 50 ሰው Add ያድርጉ (ያለዎት፦ {added})።")
-            threading.Timer(5, lambda: bot.delete_message(m.chat.id, warn.message_id)).start()
-        except: pass
+conn = init_db()
 
-# --- ሐ. የምዝገባ ሂደት ከ "ማስተካከያ ቁልፍ" ጋር ---
+# --- 3. Abel Tech ሰላምታ ---
 @bot.message_handler(commands=['start'])
-def start_reg(m):
-    if m.chat.type == 'private':
-        if m.from_user.id in registered_users:
-            bot.send_message(m.chat.id, "❌ ቀድሞውኑ ተመዝግበዋል!")
-            return
-        kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.add('🛠️ ጥገና ለመመዝገብ')
-        bot.send_message(m.chat.id, "ሰላም! ጥገና ለመመዝገብ ከታች ያለውን ይጫኑ።", reply_markup=kb)
-
-@bot.message_handler(func=lambda m: m.text == '🛠️ ጥገና ለመመዝገብ')
-def init_reg(m):
-    uid = m.from_user.id
-    added = user_counts.get(uid, 0)
-    if uid in ADMIN_IDS or added >= 50:
-        user_registry[uid] = {}
-        msg = bot.send_message(uid, "✅ ምዝገባ ጀምረናል። ሙሉ ስምዎን ያስገቡ?")
-        bot.register_next_step_handler(msg, get_name)
-    else:
-        bot.send_message(uid, f"❌ መጀመሪያ 50 ሰው ይጨምሩ። (ያለዎት፦ {added})")
-
-def get_name(m):
-    user_registry[m.from_user.id]['name'] = m.text
-    menu = "የሚጠገነውን ዕቃ ቁጥር ይላኩ:\n" + "\n".join([f"{k}. {v}" for k, v in ITEMS.items()])
-    msg = bot.send_message(m.from_user.id, menu)
-    bot.register_next_step_handler(msg, get_item)
-
-def get_item(m):
-    if m.text in ITEMS:
-        user_registry[m.from_user.id]['item'] = ITEMS[m.text]
-        msg = bot.send_message(m.from_user.id, "አድራሻዎን ይጻፉ?")
-        bot.register_next_step_handler(msg, get_loc)
-    else:
-        msg = bot.send_message(m.from_user.id, "⚠️ ከ1-7 ያለውን ቁጥር ብቻ ይላኩ።")
-        bot.register_next_step_handler(msg, get_item)
-
-def get_loc(m):
-    user_registry[m.from_user.id]['loc'] = m.text
-    msg = bot.send_message(m.from_user.id, "ስልክ ቁጥርዎን ያስገቡ (ቁጥር ብቻ)?")
-    bot.register_next_step_handler(msg, get_phone)
-
-def get_phone(m):
-    uid = m.from_user.id
-    if m.text and m.text.isdigit() and len(m.text) >= 10:
-        user_registry[uid]['phone'] = m.text
-        # ስልኩን ለማረጋገጥ ቁልፍ ማሳየት
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("✅ ትክክል ነው - ቀጥል", callback_data="confirm_phone"))
-        kb.add(types.InlineKeyboardButton("❌ ተሳስቻለሁ - አስተካክል", callback_data="edit_phone"))
-        bot.send_message(uid, f"ያስገቡት ስልክ፡ {m.text}\nትክክል መሆኑን ያረጋግጡ?", reply_markup=kb)
-    else:
-        msg = bot.send_message(uid, "❌ ስህተት! ትክክለኛ ስልክ ቁጥር ብቻ ያስገቡ።")
-        bot.register_next_step_handler(msg, get_phone)
-
-# --- መ. የቁልፎች ስራ (Callback Handler) ---
-@bot.callback_query_handler(func=lambda call: True)
-def callback_listener(call):
-    uid = call.message.chat.id
-    if call.data == "confirm_phone":
-        bot.edit_message_text("✅ ስልክዎ ተረጋግጧል። አሁን የዕቃውን ፎቶ ይላኩ?", uid, call.message.message_id)
-        bot.register_next_step_handler(call.message, finish_reg)
-    elif call.data == "edit_phone":
-        msg = bot.edit_message_text("🔄 እሺ፣ ትክክለኛውን ስልክ ቁጥር አሁን ይጻፉ?", uid, call.message.message_id)
-        bot.register_next_step_handler(call.message, get_phone)
-
-def finish_reg(m):
-    uid = m.from_user.id
-    if m.content_type != 'photo':
-        msg = bot.send_message(uid, "⚠️ እባክዎ ፎቶ ይላኩ።")
-        bot.register_next_step_handler(msg, finish_reg)
-        return
-    d = user_registry[uid]
-    summary = f"🚨 **አዲስ ትዕዛዝ**\n\n👤 ስም: {d['name']}\n🛠️ ዕቃ: {d['item']}\n📍 አድራሻ: {d['loc']}\n📞 ስልክ: {d['phone']}"
-    for aid in ADMIN_IDS: bot.send_photo(aid, m.photo[-1].file_id, caption=summary)
-    bot.send_message(uid, f"እናመሰግናለን! 🙏 በ {MY_PHONE} እንገናኝ።")
-    registered_users.add(uid)
-    user_registry.pop(uid, None)
-
-if __name__ == "__main__":
-    keep_alive()
-    bot.infinity_polling()
-
-import telebot
-from telebot import types
-import threading
-from flask import Flask
-from threading import Thread
-import os
-
-# 1. መሠረታዊ መቼቶች
-API_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN') 
-ADMIN_IDS = [8596054746, 7443150824] 
-MY_PHONE = "09XXXXXXXX" # ስልክህን እዚህ ጋር ቀይር
-bot = telebot.TeleBot(API_TOKEN)
-
-user_counts = {}
-user_registry = {}
-registered_users = set()
-ITEMS = {"1": "ፍሪጅ", "2": "ኦቭን", "3": "ልብስ ማጠቢያ", "4": "ቴሌቪዥን", "5": "ጀነሬተር", "6": "AC", "7": "Heat pump"}
-
-# --- ሀ. ዌብ ሰርቨር (ለ UptimeRobot እንዳይዘጋ) ---
-app = Flask('')
-@app.route('/')
-def home(): return "Abel Tech Bot is Running!"
-
-def keep_alive():
-    t = Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
-    t.daemon = True
-    t.start()
-
-# --- ለ. ሰላምታ እና የግሩፕ ጥበቃ ---
-@bot.message_handler(content_types=['new_chat_members'])
-def welcome_msg(m):
-    for new_user in m.new_chat_members:
-        bot.send_message(m.chat.id, f"እንኳን ደህና መጡ {new_user.first_name}! 🙏\n\nጥያቄ ለመጠየቅ መጀመሪያ 50 ሰው Add ያድርጉ።")
-    user_counts[m.from_user.id] = user_counts.get(m.from_user.id, 0) + len(m.new_chat_members)
-
-@bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'])
-def group_ctrl(m):
-    uid = m.from_user.id
-    if uid in ADMIN_IDS: return
-    if m.text and ("t.me/" in m.text or "http" in m.text):
-        bot.delete_message(m.chat.id, m.message_id)
-        return
-    added = user_counts.get(uid, 0)
-    if added < 50:
-        try:
-            bot.delete_message(m.chat.id, m.message_id)
-            warn = bot.send_message(m.chat.id, f"⚠️ መጀመሪያ 50 ሰው Add ያድርጉ (ያለዎት፦ {added})።")
-            threading.Timer(5, lambda: bot.delete_message(m.chat.id, warn.message_id)).start()
-        except: pass
-
-# --- ሐ. ዋና ሜኑ (ምዝገባ እና ምክር) ---
-@bot.message_handler(commands=['start'])
-def start_reg(m):
-    if m.chat.type == 'private':
-        if m.from_user.id in registered_users:
-            bot.send_message(m.chat.id, "❌ ቀድሞውኑ ተመዝግበዋል!")
-            return
-        kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.add('🛠️ ጥገና ለመመዝገብ', '💡 የጥገና ምክር')
-        bot.send_message(m.chat.id, "ሰላም! ጥገና ለመመዝገብ ወይም ምክር ለማግኘት ከታች ያለውን ይጫኑ።", reply_markup=kb)
-
-# የልብስ ማጠቢያ ማሽን ምክር የሚሰጥ ክፍል
-@bot.message_handler(func=lambda m: m.text == '💡 የጥገና ምክር')
-def send_advice(m):
-    advice_text = (
-        "🧺 **የልብስ ማጠቢያ ማሽን ጥንቃቄዎች**\n\n"
-        "✨ **ኪስ ይፈትሹ፦** ሳንቲም ወይም ቁልፍ ፓምፑን እንዳይሰብር\n"
-        "✨ **መጠን፦** ማሽኑን አያጨናንቁት፣ ለሞተሩ እድሜ ወሳኝ ነው\n"
-        "✨ **ሳሙና፦** ብዙ አረፋ የሚፈጥር ሳሙና አይጠቀሙ\n"
-        "✨ **አየር ማስገባት፦** ከታጠበ በኋላ በሩን ለጥቂት ጊዜ ክፍት ይተውት\n"
-        "✨ **ፊልተር፦** በየ 3 ወሩ ፊልተሩን አውጥተው ያጽዱ"
+def welcome(m):
+    welcome_text = (
+        "እንኳን ወደ Abel Tech የጥገና አገልግሎት በሰላም መጡ! 🛠️\n\n"
+        "📞 ስልክ፦ 0983664175\n"
+        "📍 አድራሻ፦ አዲሱ ገበያ፣ አራብሳ፣ ሰሚት 72\n\n"
+        "ለመመዝገብ /repair ይበሉ።"
     )
-    bot.send_message(m.chat.id, advice_text, parse_mode='Markdown')
+    bot.reply_to(m, welcome_text)
 
-@bot.message_handler(func=lambda m: m.text == '🛠️ ጥገና ለመመዝገብ')
-def init_reg(m):
-    uid = m.from_user.id
-    added = user_counts.get(uid, 0)
-    if uid in ADMIN_IDS or added >= 50:
-        user_registry[uid] = {}
-        msg = bot.send_message(uid, "✅ ምዝገባ ጀምረናል። ሙሉ ስምዎን ያስገቡ?")
-        bot.register_next_step_handler(msg, get_name)
-    else:
-        bot.send_message(uid, f"❌ መጀመሪያ 50 ሰው ይጨምሩ። (ያለዎት፦ {added})")
+# --- 4. የጥገና ምዝገባ (በምርጫ እና በቁጥር ቁጥጥር) ---
+@bot.message_handler(commands=['repair'])
+def start_repair(m):
+    msg = bot.send_message(m.chat.id, "ስምዎን ያስገቡ፦")
+    bot.register_next_step_handler(msg, get_name)
 
 def get_name(m):
-    user_registry[m.from_user.id]['name'] = m.text
-    menu = "የሚጠገነውን ዕቃ ቁጥር ይላኩ:\n" + "\n".join([f"{k}. {v}" for k, v in ITEMS.items()])
-    msg = bot.send_message(m.from_user.id, menu)
-    bot.register_next_step_handler(msg, get_item)
+    user_data = {'name': m.text}
+    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    markup.add('ቴሌቪዥን', 'ኤር ኮንዲሽነር', 'ሂት ፓምፕ', 'ጄኔሬተር', 'ፍሪጅ', 'ምድጃ (ኦቨን)', 'የልብስ ማጠቢያ ማሽን')
+    msg = bot.send_message(m.chat.id, "የሚጠገነውን ዕቃ ይምረጡ፦", reply_markup=markup)
+    bot.register_next_step_handler(msg, get_item, user_data)
 
-def get_item(m):
-    if m.text in ITEMS:
-        user_registry[m.from_user.id]['item'] = ITEMS[m.text]
-        msg = bot.send_message(m.from_user.id, "አድራሻዎን ይጻፉ?")
-        bot.register_next_step_handler(msg, get_loc)
-    else:
-        msg = bot.send_message(m.from_user.id, "⚠️ ከ1-7 ያለውን ቁጥር ብቻ ይላኩ።")
-        bot.register_next_step_handler(msg, get_item)
+def get_item(m, user_data):
+    user_data['item'] = m.text
+    msg = bot.send_message(m.chat.id, "ስልክ ቁጥርዎን ያስገቡ (ቁጥር ብቻ)፦", reply_markup=types.ReplyKeyboardRemove())
+    bot.register_next_step_handler(msg, get_phone, user_data)
 
-def get_loc(m):
-    user_registry[m.from_user.id]['loc'] = m.text
-    msg = bot.send_message(m.from_user.id, "ስልክ ቁጥርዎን ያስገቡ (ቁጥር ብቻ)?")
-    bot.register_next_step_handler(msg, get_phone)
-
-def get_phone(m):
-    uid = m.from_user.id
-    if m.text and m.text.isdigit() and len(m.text) >= 10:
-        user_registry[uid]['phone'] = m.text
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("✅ ትክክል ነው - ቀጥል", callback_data="confirm_phone"),
-               types.InlineKeyboardButton("❌ ተሳስቻለሁ - አስተካክል", callback_data="edit_phone"))
-        bot.send_message(uid, f"ያስገቡት ስልክ፡ {m.text}\nትክክል መሆኑን ያረጋግጡ?", reply_markup=kb)
-    else:
-        msg = bot.send_message(uid, "❌ ስህተት! ትክክለኛ ስልክ ቁጥር ብቻ ያስገቡ።")
-        bot.register_next_step_handler(msg, get_phone)
-
-# --- መ. የቁልፎች ስራ (Callback Handler) ---
-@bot.callback_query_handler(func=lambda call: True)
-def callback_listener(call):
-    uid = call.message.chat.id
-    if call.data == "confirm_phone":
-        bot.edit_message_text("✅ ስልክዎ ተረጋግጧል። አሁን የዕቃውን ፎቶ ይላኩ?", uid, call.message.message_id)
-        bot.register_next_step_handler(call.message, finish_reg)
-    elif call.data == "edit_phone":
-        msg = bot.edit_message_text("🔄 እሺ፣ ትክክለኛውን ስልክ ቁጥር አሁን ይጻፉ?", uid, call.message.message_id)
-        bot.register_next_step_handler(msg, get_phone)
-
-def finish_reg(m):
-    uid = m.from_user.id
-    if m.content_type != 'photo':
-        msg = bot.send_message(uid, "⚠️ እባክዎ ፎቶ ይላኩ።")
-        bot.register_next_step_handler(msg, finish_reg)
+def get_phone(m, user_data):
+    phone = m.text
+    if not phone.isdigit():
+        msg = bot.send_message(m.chat.id, "⚠️ ስህተት! እባክዎ ቁጥር ብቻ ያስገቡ፦")
+        bot.register_next_step_handler(msg, get_phone, user_data)
         return
-    d = user_registry[uid]
-    summary = f"🚨 **አዲስ ትዕዛዝ**\n\n👤 ስም: {d['name']}\n🛠️ ዕቃ: {d['item']}\n📍 አድራሻ: {d['loc']}\n📞 ስልክ: {d['phone']}"
-    for aid in ADMIN_IDS:
-        bot.send_photo(aid, m.photo[-1].file_id, caption=summary)
-    bot.send_message(uid, f"ተመዝግበው ጨርሰዋል! እናመሰግናለን! 🙏 በ {MY_PHONE} እንገናኝ።")
-    registered_users.add(uid)
-    user_registry.pop(uid, None)
+
+    c = conn.cursor()
+    c.execute("INSERT INTO repairs (user_id, name, item, phone) VALUES (?, ?, ?, ?)", (m.from_user.id, user_data['name'], user_data['item'], phone))
+    conn.commit()
+    bot.send_message(MY_ADMIN_ID, f"🔔 አዲስ ጥያቄ!\n👤 ስም: {user_data['name']}\n🛠 ዕቃ: {user_data['item']}\n📞 ስልክ: {phone}")
+    bot.reply_to(m, "✅ ተመዝግቧል! እናመሰግናለን።")
+
+@app.route('/')
+def home(): return "Online"
+def run(): app.run(host='0.0.0.0', port=8080)
+def keep_alive(): Thread(target=run).start()
 
 if __name__ == "__main__":
     keep_alive()
