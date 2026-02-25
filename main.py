@@ -72,4 +72,3 @@ def keep_alive(): Thread(target=run).start()
 if __name__ == "__main__":
     keep_alive()
     bot.infinity_polling()
-
